@@ -60,6 +60,7 @@ export function ComparisonPage() {
                 <th className="py-1.5 px-3 font-semibold">Trend</th>
                 <th className="py-1.5 px-2 font-semibold text-right">Change</th>
                 <th className="py-1.5 px-2 font-semibold text-right">KM/Ord</th>
+                <th className="py-1.5 px-2 font-semibold text-right">Util (wk)</th>
                 <th className="py-1.5 pl-2 font-semibold text-right">₹/Del</th>
               </tr>
             </thead>
@@ -85,6 +86,12 @@ export function ComparisonPage() {
                       <Delta value={s.changePct} suffix="%" />
                     </td>
                     <td className="py-2 px-2 text-right tabular-nums text-[var(--text-secondary)]">{s.kmPerOrderLatest ?? "—"}</td>
+                    <td
+                      className="py-2 px-2 text-right tabular-nums"
+                      style={{ color: s.utilizationLatestPct != null && s.utilizationLatestPct < 50 ? "var(--status-serious)" : "var(--text-secondary)" }}
+                    >
+                      {s.utilizationLatestPct != null ? `${s.utilizationLatestPct}%` : "—"}
+                    </td>
                     <td className="py-2 pl-2 text-right tabular-nums font-medium">{s.payoutPerDeliveryLatest != null ? `₹${s.payoutPerDeliveryLatest}` : "—"}</td>
                   </tr>
                 );
@@ -174,9 +181,10 @@ function RiderKpiBlock({
       <div className="text-2xl font-semibold tabular-nums mt-1">
         {latest.orders} <span className="text-xs font-normal text-[var(--text-muted)]">orders this week</span>
       </div>
-      <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+      <div className="grid grid-cols-4 gap-2 mt-3 text-xs">
         <MiniStat label="KM/ORD" value={series.kmPerOrderLatest ?? "—"} />
         <MiniStat label="DAYS ACTIVE" value={`${daysActive}`} />
+        <MiniStat label="UTIL (WK)" value={series.utilizationLatestPct != null ? `${series.utilizationLatestPct}%` : "—"} />
         <MiniStat label="₹/DEL" value={series.payoutPerDeliveryLatest != null ? `₹${series.payoutPerDeliveryLatest}` : "—"} />
       </div>
     </div>

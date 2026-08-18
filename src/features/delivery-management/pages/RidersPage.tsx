@@ -71,6 +71,14 @@ export function RidersPage() {
                   <div className="text-xs text-[var(--text-muted)] mt-0.5 tabular-nums">
                     {row.orders} {row.orders === 1 ? "order" : "orders"} today · {row.km != null ? `${row.km.toFixed(1)} km` : "no km logged"}
                   </div>
+                  {row.utilizationPct != null && (
+                    <div
+                      className="text-xs mt-0.5 tabular-nums"
+                      style={{ color: row.utilizationPct < 50 ? "var(--status-serious)" : "var(--text-muted)" }}
+                    >
+                      {row.utilizationPct}% utilized
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Pill tone={row.attendance === "P" ? "good" : "critical"}>{row.attendance === "P" ? "On duty" : "Absent"}</Pill>

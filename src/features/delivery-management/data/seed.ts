@@ -44,20 +44,24 @@ interface RiderProfile {
   otBase: number;
   merchantWeights: Record<string, number>;
   otNilRate: number;
+  /** average minutes spent actively on one delivery (pickup to drop), used to derive active/idle time. */
+  avgDeliveryMins: number;
+  /** roughly when the rider reports in, as a decimal hour (9.25 = 09:15). */
+  reportingHour: number;
 }
 
 const PROFILES: RiderProfile[] = [
-  { id: "teja-ram", baseOrders: 8, weeklyTrend: 0.55, kmPerOrder: 5.9, otBase: 1.1, otNilRate: 0.05, merchantWeights: { "nehas-kitchen": 0.85, "fort-royal": 0.15 } },
-  { id: "changaiah", baseOrders: 6.5, weeklyTrend: 0.7, kmPerOrder: 7.4, otBase: 1.0, otNilRate: 0.05, merchantWeights: { "nehas-kitchen": 0.7, "fort-royal": 0.3 } },
-  { id: "sudhakar", baseOrders: 4.2, weeklyTrend: 0, kmPerOrder: 12.4, otBase: 1.5, otNilRate: 0.05, merchantWeights: { "fort-royal": 1 } },
-  { id: "prasanna", baseOrders: 4.6, weeklyTrend: -0.25, kmPerOrder: 12.9, otBase: 1.5, otNilRate: 0.1, merchantWeights: { "fort-royal": 1 } },
-  { id: "rafi-sk", baseOrders: 3.2, weeklyTrend: 0, kmPerOrder: 13.6, otBase: 1.8, otNilRate: 0.05, merchantWeights: { "fort-royal": 0.6, "fusion-street": 0.2, momesta: 0.2 } },
-  { id: "vasu", baseOrders: 3.8, weeklyTrend: 0, kmPerOrder: 15.1, otBase: 1.5, otNilRate: 0.1, merchantWeights: { "fort-royal": 0.65, "nehas-kitchen": 0.35 } },
-  { id: "polaiah", baseOrders: 4.0, weeklyTrend: 0, kmPerOrder: 4.4, otBase: 0.6, otNilRate: 0.3, merchantWeights: { "fort-royal": 0.25, "fusion-street": 0.25, momesta: 0.25, "nehas-kitchen": 0.25 } },
-  { id: "ajarjan", baseOrders: 2.8, weeklyTrend: -0.15, kmPerOrder: 9.8, otBase: 1.5, otNilRate: 0.1, merchantWeights: { "fort-royal": 1 } },
-  { id: "gowtham", baseOrders: 3.2, weeklyTrend: -0.85, kmPerOrder: 22.0, otBase: 1.5, otNilRate: 0.15, merchantWeights: { "fort-royal": 1 } },
-  { id: "dheena", baseOrders: 2.4, weeklyTrend: -0.2, kmPerOrder: 32.0, otBase: 0.3, otNilRate: 0.4, merchantWeights: { "nehas-kitchen": 1 } },
-  { id: "durairajan", baseOrders: 0.7, weeklyTrend: 0.1, kmPerOrder: 9.8, otBase: 0.2, otNilRate: 0.5, merchantWeights: { "fort-royal": 1 } },
+  { id: "teja-ram", baseOrders: 8, weeklyTrend: 0.55, kmPerOrder: 5.9, otBase: 1.1, otNilRate: 0.05, avgDeliveryMins: 30, reportingHour: 8.75, merchantWeights: { "nehas-kitchen": 0.85, "fort-royal": 0.15 } },
+  { id: "changaiah", baseOrders: 6.5, weeklyTrend: 0.7, kmPerOrder: 7.4, otBase: 1.0, otNilRate: 0.05, avgDeliveryMins: 32, reportingHour: 8.75, merchantWeights: { "nehas-kitchen": 0.7, "fort-royal": 0.3 } },
+  { id: "sudhakar", baseOrders: 4.2, weeklyTrend: 0, kmPerOrder: 12.4, otBase: 1.5, otNilRate: 0.05, avgDeliveryMins: 40, reportingHour: 9.0, merchantWeights: { "fort-royal": 1 } },
+  { id: "prasanna", baseOrders: 4.6, weeklyTrend: -0.25, kmPerOrder: 12.9, otBase: 1.5, otNilRate: 0.1, avgDeliveryMins: 42, reportingHour: 9.0, merchantWeights: { "fort-royal": 1 } },
+  { id: "rafi-sk", baseOrders: 3.2, weeklyTrend: 0, kmPerOrder: 13.6, otBase: 1.8, otNilRate: 0.05, avgDeliveryMins: 48, reportingHour: 9.1, merchantWeights: { "fort-royal": 0.6, "fusion-street": 0.2, momesta: 0.2 } },
+  { id: "vasu", baseOrders: 3.8, weeklyTrend: 0, kmPerOrder: 15.1, otBase: 1.5, otNilRate: 0.1, avgDeliveryMins: 46, reportingHour: 9.0, merchantWeights: { "fort-royal": 0.65, "nehas-kitchen": 0.35 } },
+  { id: "polaiah", baseOrders: 4.0, weeklyTrend: 0, kmPerOrder: 4.4, otBase: 0.6, otNilRate: 0.3, avgDeliveryMins: 26, reportingHour: 9.25, merchantWeights: { "fort-royal": 0.25, "fusion-street": 0.25, momesta: 0.25, "nehas-kitchen": 0.25 } },
+  { id: "ajarjan", baseOrders: 2.8, weeklyTrend: -0.15, kmPerOrder: 9.8, otBase: 1.5, otNilRate: 0.1, avgDeliveryMins: 40, reportingHour: 9.25, merchantWeights: { "fort-royal": 1 } },
+  { id: "gowtham", baseOrders: 3.2, weeklyTrend: -0.85, kmPerOrder: 22.0, otBase: 1.5, otNilRate: 0.15, avgDeliveryMins: 36, reportingHour: 9.0, merchantWeights: { "fort-royal": 1 } },
+  { id: "dheena", baseOrders: 2.4, weeklyTrend: -0.2, kmPerOrder: 32.0, otBase: 0.3, otNilRate: 0.4, avgDeliveryMins: 78, reportingHour: 9.5, merchantWeights: { "nehas-kitchen": 1 } },
+  { id: "durairajan", baseOrders: 0.7, weeklyTrend: 0.1, kmPerOrder: 9.8, otBase: 0.2, otNilRate: 0.5, avgDeliveryMins: 36, reportingHour: 9.5, merchantWeights: { "fort-royal": 1 } },
 ];
 
 const DORMANT_MERCHANT_IDS = new Set(["dhanush", "fine-snacks"]);
@@ -65,6 +69,12 @@ const DORMANT_MERCHANT_IDS = new Set(["dhanush", "fine-snacks"]);
 function weekIndex(date: Date, startDate: Date) {
   const days = Math.floor((date.getTime() - startDate.getTime()) / 86400000);
   return Math.floor(days / 7);
+}
+
+function formatHourMinute(hour: number): string {
+  const h = Math.floor(hour);
+  const m = Math.round((hour - h) * 60);
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 function pickMerchant(rnd: () => number, weights: Record<string, number>): string {
@@ -118,6 +128,9 @@ export function generateSeedData(today: Date): DeliveryStatsDB {
           orders: 0,
           km: null,
           otHours: null,
+          reportingTime: null,
+          exitTime: null,
+          activeMinutes: null,
           merchantOrders: {},
           payoutMod: false,
         });
@@ -159,6 +172,14 @@ export function generateSeedData(today: Date): DeliveryStatsDB {
         if (isOtClusterDay && orders > 0) otHours = Math.max(otHours, 1.5);
       }
 
+      const reportingHour = profile.reportingHour + (rnd() - 0.5) * 0.4;
+      const shiftHours = 8 + (rnd() - 0.5) * 0.6 + (otHours ?? 0) * 0.3;
+      const reportingTime = formatHourMinute(reportingHour);
+      const exitTime = formatHourMinute(reportingHour + shiftHours);
+      const shiftMinutes = Math.round(shiftHours * 60);
+      const rawActiveMinutes = orders * profile.avgDeliveryMins * (0.85 + rnd() * 0.4);
+      const activeMinutes = Math.max(0, Math.min(shiftMinutes - 10, Math.round(rawActiveMinutes)));
+
       entries.push({
         date: dateStr,
         riderId: rider.id,
@@ -166,6 +187,9 @@ export function generateSeedData(today: Date): DeliveryStatsDB {
         orders,
         km,
         otHours,
+        reportingTime,
+        exitTime,
+        activeMinutes,
         merchantOrders,
         payoutMod: false,
       });
@@ -187,7 +211,7 @@ export function generateSeedData(today: Date): DeliveryStatsDB {
     merchants: MERCHANTS,
     entries,
     days,
-    rates: { baseActiveRider: 300, perKm: 7, perOtHour: 95 },
+    rates: { baseActiveRider: 300, perKm: 7, perOtHour: 95, standardShiftHours: 8 },
   };
 }
 

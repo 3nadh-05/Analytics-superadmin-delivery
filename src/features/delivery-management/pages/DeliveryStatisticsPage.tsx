@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDeliveryStatsDB, todayISO, setDayClosed, getDayMeta } from "../data/store";
 import { computeDayStats, computeTrend } from "../data/aggregate";
-import { addDays, formatLong, formatShort, fromISODate } from "../data/dates";
+import { addDays, formatHm, formatLong, formatShort, fromISODate } from "../data/dates";
 import { Card, Delta, KpiCard, LoadBar, Pill, SectionLabel } from "../components/ui";
 import { BarTrend } from "../components/BarTrend";
 
@@ -29,7 +29,21 @@ export function DeliveryStatisticsPage() {
   const canFuture = fromISODate(date) < fromISODate(today);
 
   function exportCsv() {
-    const header = ["Rider", "Orders", "KM", "KM/Order", "OT Hrs", "Attendance", "Payout"];
+    const header = [
+      "Rider",
+      "Orders",
+      "KM",
+      "KM/Order",
+      "OT Hrs",
+      "Attendance",
+      "Reporting",
+      "Exit",
+      "Active Min",
+      "Idle Min",
+      "Utilization %",
+      "Idle Cost",
+      "Payout",
+    ];
     const rows = stats.riders.map((r) => [
       r.riderName,
       r.orders,
@@ -37,6 +51,12 @@ export function DeliveryStatisticsPage() {
       r.kmPerOrder ?? "",
       r.otHours ?? "",
       r.attendance,
+      r.reportingTime ?? "",
+      r.exitTime ?? "",
+      r.activeMinutes ?? "",
+      r.idleMinutes ?? "",
+      r.utilizationPct ?? "",
+      r.idleCost ?? "",
       r.payout ?? "",
     ]);
     const csv = [header, ...rows].map((row) => row.join(",")).join("\n");
@@ -115,6 +135,22 @@ export function DeliveryStatisticsPage() {
           delta={Math.round(stats.payout.perDelivery - prevStats.payout.perDelivery)}
           invertDelta
         />
+        <KpiCard
+          label="Fleet utilization"
+          badge="MOD"
+          value={stats.utilizationAvgPct != null ? `${stats.utilizationAvgPct}%` : "—"}
+          unit={`of ${db.rates.standardShiftHours}h shift`}
+          delta={stats.utilizationAvgPct != null && prevStats.utilizationAvgPct != null ? stats.utilizationAvgPct - prevStats.utilizationAvgPct : undefined}
+          deltaSuffix="pt"
+        />
+        <KpiCard
+          label="Idle cost"
+          badge="MOD"
+          value={`₹${stats.idleCostTotal}`}
+          unit={`${stats.idleHoursTotal.toFixed(1)}h idle`}
+          delta={stats.idleCostTotal - prevStats.idleCostTotal}
+          invertDelta
+        />
       </div>
 
       {/* body */}
@@ -181,6 +217,77 @@ export function DeliveryStatisticsPage() {
                     <td className="py-2 pl-3 text-right tabular-nums">₹{stats.payout.total}</td>
                   </tr>
                 </tfoot>
+              </table>
+            </div>
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <SectionLabel>Utilization by rider · reporting to exit</SectionLabel>
+              <span className="text-xs text-[var(--text-muted)]">
+                {stats.utilizationAvgPct != null ? `${stats.utilizationAvgPct}% fleet avg` : "no shift times logged"}
+              </span>
+            </div>
+            <p className="text-xs text-[var(--text-secondary)] mt-1 leading-snug">
+              Base pay assumes a full {db.rates.standardShiftHours}h shift. Utilization is the share of that shift actually
+              spent on deliveries — sorted worst first.
+            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                    <th className="py-1.5 pr-3 font-semibold">Rider</th>
+                    <th className="py-1.5 px-2 font-semibold text-center">Reporting</th>
+                    <th className="py-1.5 px-2 font-semibold text-center">Exit</th>
+                    <th className="py-1.5 px-2 font-semibold text-right">Shift</th>
+                    <th className="py-1.5 px-2 font-semibold text-right">Active</th>
+                    <th className="py-1.5 px-2 font-semibold text-right">Idle</th>
+                    <th className="py-1.5 px-2 font-semibold">Utilization</th>
+                    <th className="py-1.5 pl-2 font-semibold text-right">Idle cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...stats.riders]
+                    .filter((r) => r.attendance === "P")
+                    .sort((a, b) => (a.utilizationPct ?? 999) - (b.utilizationPct ?? 999))
+                    .map((r) => {
+                      const low = r.utilizationPct != null && r.utilizationPct < 50;
+                      return (
+                        <tr key={r.riderId} className="border-t border-[var(--gridline)]">
+                          <td className="py-2 pr-3 font-medium whitespace-nowrap">{r.riderName}</td>
+                          <td className="py-2 px-2 text-center tabular-nums text-[var(--text-secondary)]">{r.reportingTime ?? "—"}</td>
+                          <td className="py-2 px-2 text-center tabular-nums text-[var(--text-secondary)]">{r.exitTime ?? "—"}</td>
+                          <td className="py-2 px-2 text-right tabular-nums text-[var(--text-secondary)]">
+                            {r.shiftMinutes != null ? formatHm(r.shiftMinutes) : "n/a"}
+                          </td>
+                          <td className="py-2 px-2 text-right tabular-nums text-[var(--text-secondary)]">
+                            {r.activeMinutes != null ? formatHm(r.activeMinutes) : "n/a"}
+                          </td>
+                          <td className="py-2 px-2 text-right tabular-nums" style={{ color: low ? "var(--status-serious)" : "var(--text-secondary)" }}>
+                            {r.idleMinutes != null ? formatHm(r.idleMinutes) : "—"}
+                          </td>
+                          <td className="py-2 px-2">
+                            {r.utilizationPct != null ? (
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 h-1.5 rounded-full bg-black/5 overflow-hidden">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{ width: `${Math.min(100, r.utilizationPct)}%`, background: low ? "var(--status-serious)" : "var(--series-1)" }}
+                                  />
+                                </div>
+                                <span className="tabular-nums font-medium" style={{ color: low ? "var(--status-serious)" : undefined }}>
+                                  {r.utilizationPct}%
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-[var(--text-muted)]">—</span>
+                            )}
+                          </td>
+                          <td className="py-2 pl-2 text-right tabular-nums font-medium">{r.idleCost != null ? `₹${r.idleCost}` : "—"}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
               </table>
             </div>
           </Card>
@@ -268,6 +375,11 @@ export function DeliveryStatisticsPage() {
               <Row label="Rows reconciled" value={`${stats.riders.filter((r) => r.attendance === "P").length + stats.riders.filter((r) => r.attendance === "A").length}/${stats.rosterSize}`} />
               <Row label="KM missing" value={String(stats.kmMissingCount)} tone={stats.kmMissingCount > 0 ? "warn" : undefined} />
               <Row label="OT logged as nil" value={String(stats.otNilCount)} />
+              <Row
+                label="Shift time missing"
+                value={String(stats.shiftTimeMissingCount)}
+                tone={stats.shiftTimeMissingCount > 0 ? "warn" : undefined}
+              />
               <Row label="Status" value={<Delta value={0} />} />
             </div>
           </Card>

@@ -21,7 +21,27 @@ export function PayoutsPage() {
         .
       </p>
 
-      <Card className="p-4 mt-5">
+      {stats.idleCostTotal > 0 && (
+        <Card className="p-4 mt-5 border-l-4" style={{ borderLeftColor: "var(--status-serious)" }}>
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <SectionLabel>Idle cost today</SectionLabel>
+              <p className="text-sm text-[var(--text-secondary)] mt-1 max-w-xl">
+                Base pay assumes a full {db.rates.standardShiftHours}h shift. {stats.idleHoursTotal.toFixed(1)}h of clocked-in
+                time across the fleet went to idle time between orders, not deliveries.
+              </p>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-semibold tabular-nums" style={{ color: "var(--status-serious)" }}>
+                ₹{stats.idleCostTotal}
+              </div>
+              <div className="text-xs text-[var(--text-muted)]">of ₹{stats.payout.base} base pay</div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card className="p-4 mt-4">
         <div className="flex items-center justify-between">
           <SectionLabel>Today · ₹{stats.payout.total} total</SectionLabel>
           <span className="text-xs text-[var(--text-muted)]">
@@ -35,19 +55,30 @@ export function PayoutsPage() {
               <th className="py-1.5 px-3 font-semibold text-right">Orders</th>
               <th className="py-1.5 px-3 font-semibold text-right">KM</th>
               <th className="py-1.5 px-3 font-semibold text-right">OT hrs</th>
+              <th className="py-1.5 px-3 font-semibold text-right">Utilization</th>
+              <th className="py-1.5 px-3 font-semibold text-right">Idle cost</th>
               <th className="py-1.5 pl-3 font-semibold text-right">Payout</th>
             </tr>
           </thead>
           <tbody>
-            {stats.riders.map((r) => (
-              <tr key={r.riderId} className="border-t border-[var(--gridline)]">
-                <td className="py-2 pr-3 font-medium">{r.riderName}</td>
-                <td className="py-2 px-3 text-right tabular-nums">{r.orders}</td>
-                <td className="py-2 px-3 text-right tabular-nums">{r.km != null ? r.km.toFixed(1) : "—"}</td>
-                <td className="py-2 px-3 text-right tabular-nums">{r.otHours ?? "—"}</td>
-                <td className="py-2 pl-3 text-right tabular-nums font-medium">{r.payout != null ? `₹${r.payout}` : "—"}</td>
-              </tr>
-            ))}
+            {stats.riders.map((r) => {
+              const low = r.utilizationPct != null && r.utilizationPct < 50;
+              return (
+                <tr key={r.riderId} className="border-t border-[var(--gridline)]">
+                  <td className="py-2 pr-3 font-medium">{r.riderName}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.orders}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.km != null ? r.km.toFixed(1) : "—"}</td>
+                  <td className="py-2 px-3 text-right tabular-nums">{r.otHours ?? "—"}</td>
+                  <td className="py-2 px-3 text-right tabular-nums" style={{ color: low ? "var(--status-serious)" : undefined, fontWeight: low ? 600 : 400 }}>
+                    {r.utilizationPct != null ? `${r.utilizationPct}%` : "—"}
+                  </td>
+                  <td className="py-2 px-3 text-right tabular-nums" style={{ color: low ? "var(--status-serious)" : "var(--text-secondary)" }}>
+                    {r.idleCost != null ? `₹${r.idleCost}` : "—"}
+                  </td>
+                  <td className="py-2 pl-3 text-right tabular-nums font-medium">{r.payout != null ? `₹${r.payout}` : "—"}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </Card>

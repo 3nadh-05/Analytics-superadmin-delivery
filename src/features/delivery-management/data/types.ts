@@ -20,6 +20,12 @@ export interface DailyEntry {
   km: number | null;
   /** OT hours is null when the source sheet logs "nil" for that day. */
   otHours: number | null;
+  /** clock-in, 24hr "HH:MM"; null when not logged. */
+  reportingTime: string | null;
+  /** clock-out, 24hr "HH:MM"; null when not logged. */
+  exitTime: string | null;
+  /** total minutes actually spent on deliveries (picked up from delivery ETAs) — the working portion of the shift, as opposed to idle time between orders. Null when not logged. */
+  activeMinutes: number | null;
   /** orders attributed to each merchant; values should sum to `orders`. */
   merchantOrders: Record<string, number>;
   /** manual payout override flag ("MOD" badge in the source screens). */
@@ -38,6 +44,8 @@ export interface PayoutRates {
   baseActiveRider: number; // ₹ per active rider per day
   perKm: number; // ₹ per km
   perOtHour: number; // ₹ per OT hour
+  /** the shift length the flat base pay assumes a rider is working, in hours. */
+  standardShiftHours: number;
 }
 
 export interface DeliveryStatsDB {

@@ -1,5 +1,5 @@
 import type { DailyEntry, DeliveryStatsDB, PayoutRates } from "./types";
-import { addDays, fromISODate, weekStart } from "./dates";
+import { addDays, fromISODate, minutesBetween, weekStart } from "./dates";
 
 export interface RiderDayRow {
   riderId: string;
@@ -12,6 +12,18 @@ export interface RiderDayRow {
   payout: number | null;
   loadFraction: number; // orders / max orders among riders that day
   merchantOrders: Record<string, number>;
+  reportingTime: string | null;
+  exitTime: string | null;
+  /** minutes between reporting and exit; null when either clock time is missing/invalid. */
+  shiftMinutes: number | null;
+  /** minutes actually spent on deliveries. */
+  activeMinutes: number | null;
+  /** shiftMinutes - activeMinutes, floored at 0; null when shift time isn't known. */
+  idleMinutes: number | null;
+  /** activeMinutes / shiftMinutes as a percentage; null when shift time isn't known. */
+  utilizationPct: number | null;
+  /** the slice of the flat base pay that corresponds to idle time, at (base / standard shift hours). */
+  idleCost: number | null;
 }
 
 export interface MerchantDayRow {
@@ -32,7 +44,7 @@ export interface PayoutBreakdown {
 
 export interface Exception {
   id: string;
-  kind: "dormant-merchant" | "long-trip" | "no-show" | "ot-cluster" | "missing-km" | "ot-nil";
+  kind: "dormant-merchant" | "long-trip" | "no-show" | "ot-cluster" | "missing-km" | "ot-nil" | "low-utilization";
   severity: "warning" | "serious" | "critical";
   title: string;
   subject: string;
@@ -53,12 +65,21 @@ export interface DayStats {
   merchants: MerchantDayRow[];
   payout: PayoutBreakdown;
   exceptions: Exception[];
+  /** average utilization % across riders with a known shift time; null if none logged. */
+  utilizationAvgPct: number | null;
+  idleHoursTotal: number;
+  idleCostTotal: number;
+  /** riders present today but missing reporting/exit time (or with exit before reporting). */
+  shiftTimeMissingCount: number;
 }
 
 const LONG_TRIP_KM_PER_ORDER = 20;
 const OT_FLAG_HOURS = 1.5;
 const OT_CLUSTER_MIN_RIDERS = 4;
 const DORMANT_LOOKBACK_DAYS = 2;
+const LOW_UTILIZATION_PCT = 50;
+const LOW_UTILIZATION_MIN_IDLE_MINUTES = 120;
+const LOW_UTILIZATION_AGGREGATE_MIN_RIDERS = 3;
 
 function entriesForDate(db: DeliveryStatsDB, date: string): DailyEntry[] {
   return db.entries.filter((e) => e.date === date);
@@ -82,6 +103,8 @@ export function computeDayStats(db: DeliveryStatsDB, date: string): DayStats {
   const activeRiders = dayEntries.filter((e) => e.attendance === "P").length;
   const maxOrders = Math.max(1, ...dayEntries.map((e) => e.orders));
 
+  const hourlyBaseRate = db.rates.baseActiveRider / db.rates.standardShiftHours;
+
   const riders: RiderDayRow[] = db.riders.map((r) => {
     const e = dayEntries.find((x) => x.riderId === r.id);
     const rOrders = e?.orders ?? 0;
@@ -92,6 +115,13 @@ export function computeDayStats(db: DeliveryStatsDB, date: string): DayStats {
       rAttendance === "P"
         ? Math.round(db.rates.baseActiveRider + (rKm ?? 0) * db.rates.perKm + (rOt ?? 0) * db.rates.perOtHour)
         : null;
+
+    const shiftMinutes = e ? minutesBetween(e.reportingTime, e.exitTime) : null;
+    const activeMinutes = e?.activeMinutes ?? null;
+    const idleMinutes = shiftMinutes != null && activeMinutes != null ? Math.max(0, shiftMinutes - activeMinutes) : null;
+    const utilizationPct = shiftMinutes != null && activeMinutes != null && shiftMinutes > 0 ? Math.round((activeMinutes / shiftMinutes) * 100) : null;
+    const idleCost = idleMinutes != null ? Math.round((idleMinutes / 60) * hourlyBaseRate) : null;
+
     return {
       riderId: r.id,
       riderName: r.name,
@@ -103,6 +133,13 @@ export function computeDayStats(db: DeliveryStatsDB, date: string): DayStats {
       payout,
       loadFraction: rOrders / maxOrders,
       merchantOrders: e?.merchantOrders ?? {},
+      reportingTime: e?.reportingTime ?? null,
+      exitTime: e?.exitTime ?? null,
+      shiftMinutes,
+      activeMinutes,
+      idleMinutes,
+      utilizationPct,
+      idleCost,
     };
   });
   riders.sort((a, b) => b.orders - a.orders);
@@ -124,6 +161,15 @@ export function computeDayStats(db: DeliveryStatsDB, date: string): DayStats {
   const payout = computePayout(db.rates, activeRiders, km, otHours, orders);
   const exceptions = computeExceptions(db, date, riders, merchants, otHours);
 
+  const presentRiders = riders.filter((r) => r.attendance === "P");
+  const withUtilization = presentRiders.filter((r) => r.utilizationPct != null);
+  const utilizationAvgPct = withUtilization.length
+    ? Math.round(withUtilization.reduce((s, r) => s + (r.utilizationPct as number), 0) / withUtilization.length)
+    : null;
+  const idleMinutesTotal = presentRiders.reduce((s, r) => s + (r.idleMinutes ?? 0), 0);
+  const idleCostTotal = presentRiders.reduce((s, r) => s + (r.idleCost ?? 0), 0);
+  const shiftTimeMissingCount = presentRiders.filter((r) => r.shiftMinutes == null).length;
+
   return {
     date,
     orders,
@@ -138,6 +184,10 @@ export function computeDayStats(db: DeliveryStatsDB, date: string): DayStats {
     merchants,
     payout,
     exceptions,
+    utilizationAvgPct,
+    idleHoursTotal: Math.round((idleMinutesTotal / 60) * 10) / 10,
+    idleCostTotal,
+    shiftTimeMissingCount,
   };
 }
 
@@ -232,6 +282,42 @@ function computeExceptions(
     }
   }
 
+  // Low utilization: clocked a near-full shift but spent most of it idle between orders.
+  // When it's a handful of riders, name them — when it's most of the fleet, that's a
+  // scheduling/demand problem, not an individual one, so roll it into a single callout
+  // (same idea as the OT cluster above) instead of repeating the same line N times.
+  const lowUtilRiders = riders.filter(
+    (r) => r.attendance === "P" && r.utilizationPct != null && r.utilizationPct < LOW_UTILIZATION_PCT && (r.idleMinutes ?? 0) >= LOW_UTILIZATION_MIN_IDLE_MINUTES
+  );
+  if (lowUtilRiders.length > LOW_UTILIZATION_AGGREGATE_MIN_RIDERS) {
+    const idleHTotal = Math.round((lowUtilRiders.reduce((s, r) => s + (r.idleMinutes ?? 0), 0) / 60) * 10) / 10;
+    const costTotal = lowUtilRiders.reduce((s, r) => s + (r.idleCost ?? 0), 0);
+    const avgUtil = Math.round(lowUtilRiders.reduce((s, r) => s + (r.utilizationPct as number), 0) / lowUtilRiders.length);
+    out.push({
+      id: "low-utilization-fleet",
+      kind: "low-utilization",
+      severity: avgUtil < 30 ? "serious" : "warning",
+      title: "Fleet-wide low utilization",
+      subject: `${lowUtilRiders.length} of ${riders.filter((r) => r.attendance === "P").length} riders`,
+      detail: `Averaging ${avgUtil}% utilized, ${idleHTotal} idle hr combined — ≈₹${costTotal} of base pay covering idle time. Likely overstaffed for today's order volume; see Utilization by rider for the full breakdown.`,
+    });
+  } else {
+    for (const r of lowUtilRiders) {
+      const idleH = Math.round(((r.idleMinutes ?? 0) / 60) * 10) / 10;
+      const shiftH = Math.round(((r.shiftMinutes ?? 0) / 60) * 10) / 10;
+      out.push({
+        id: `low-utilization-${r.riderId}`,
+        kind: "low-utilization",
+        severity: (r.utilizationPct as number) < 30 ? "serious" : "warning",
+        title: "Low utilization",
+        subject: r.riderName,
+        detail: `${r.utilizationPct}% utilized — ${idleH} idle hr of a ${shiftH} hr shift${
+          r.idleCost != null ? `, ≈₹${r.idleCost} of base pay covering idle time` : ""
+        }.`,
+      });
+    }
+  }
+
   return out;
 }
 
@@ -273,6 +359,9 @@ export interface RiderWeeklySeries {
   kmPerOrderLatest: number | null;
   payoutPerDeliveryLatest: number | null;
   changePct: number | null;
+  /** average utilization % over the latest week's days with a logged shift; null if none logged. */
+  utilizationLatestPct: number | null;
+  idleHoursLatest: number;
 }
 
 export function listWeekStarts(endDate: string, numWeeks: number): string[] {
@@ -328,6 +417,22 @@ export function computeWeeklySeries(db: DeliveryStatsDB, endDate: string, numWee
           ? null
           : 0;
 
+    // utilization / idle time over the latest week's logged days
+    const utilPcts: number[] = [];
+    let idleMinutesLatest = 0;
+    for (let i = 0; i < latest.daysInWeek; i++) {
+      const d = addDays(latest.weekStartISO, i);
+      const e = db.entries.find((x) => x.date === d && x.riderId === r.id);
+      if (e && e.attendance === "P") {
+        const shiftMinutes = minutesBetween(e.reportingTime, e.exitTime);
+        if (shiftMinutes != null && e.activeMinutes != null) {
+          utilPcts.push(Math.round((e.activeMinutes / shiftMinutes) * 100));
+          idleMinutesLatest += Math.max(0, shiftMinutes - e.activeMinutes);
+        }
+      }
+    }
+    const utilizationLatestPct = utilPcts.length ? Math.round(utilPcts.reduce((a, b) => a + b, 0) / utilPcts.length) : null;
+
     // payout / km-per-order for the latest full data window (all cells combined for stability)
     let totalOrders = 0;
     let totalKm = 0;
@@ -352,6 +457,8 @@ export function computeWeeklySeries(db: DeliveryStatsDB, endDate: string, numWee
       kmPerOrderLatest: totalOrders > 0 ? Math.round((totalKm / totalOrders) * 10) / 10 : null,
       payoutPerDeliveryLatest: totalOrders > 0 ? Math.round(totalPayout / totalOrders) : null,
       changePct,
+      utilizationLatestPct,
+      idleHoursLatest: Math.round((idleMinutesLatest / 60) * 10) / 10,
     };
   });
 }

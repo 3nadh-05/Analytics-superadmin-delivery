@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useDeliveryStatsDB, todayISO, upsertEntry, setDayClosed, getDayMeta } from "../data/store";
 import type { Attendance, DailyEntry } from "../data/types";
-import { formatLong } from "../data/dates";
+import { formatHm, formatLong, minutesBetween } from "../data/dates";
 import { Card, Pill, SectionLabel } from "../components/ui";
 
 interface DraftRow {
@@ -12,6 +12,9 @@ interface DraftRow {
   km: number | "";
   otHours: number | "";
   payoutMod: boolean;
+  reportingTime: string;
+  exitTime: string;
+  activeMinutes: number | "";
 }
 
 function buildDraft(db: ReturnType<typeof useDeliveryStatsDB>, date: string): DraftRow[] {
@@ -27,6 +30,9 @@ function buildDraft(db: ReturnType<typeof useDeliveryStatsDB>, date: string): Dr
       km: e?.km ?? "",
       otHours: e?.otHours ?? "",
       payoutMod: e?.payoutMod ?? false,
+      reportingTime: e?.reportingTime ?? "",
+      exitTime: e?.exitTime ?? "",
+      activeMinutes: e?.activeMinutes ?? "",
     };
   });
 }
@@ -64,7 +70,18 @@ export function DataEntryPage() {
         changed = true;
         const merchantOrders: Record<string, number | ""> = {};
         for (const m of db.merchants) merchantOrders[m.id] = "";
-        merged.push({ riderId: r.id, riderName: r.name, attendance: "P", merchantOrders, km: "", otHours: "", payoutMod: false });
+        merged.push({
+          riderId: r.id,
+          riderName: r.name,
+          attendance: "P",
+          merchantOrders,
+          km: "",
+          otHours: "",
+          payoutMod: false,
+          reportingTime: "",
+          exitTime: "",
+          activeMinutes: "",
+        });
       }
       return changed ? merged : prev;
     });
@@ -106,14 +123,18 @@ export function DataEntryPage() {
           orders += v;
         }
       }
+      const isAbsent = row.attendance === "A";
       const entry: DailyEntry = {
         date,
         riderId: row.riderId,
         attendance: row.attendance,
-        orders: row.attendance === "A" ? 0 : orders,
-        km: row.attendance === "A" ? null : row.km === "" ? null : row.km,
-        otHours: row.attendance === "A" ? null : row.otHours === "" ? null : row.otHours,
-        merchantOrders: row.attendance === "A" ? {} : merchantOrders,
+        orders: isAbsent ? 0 : orders,
+        km: isAbsent ? null : row.km === "" ? null : row.km,
+        otHours: isAbsent ? null : row.otHours === "" ? null : row.otHours,
+        reportingTime: isAbsent || row.reportingTime === "" ? null : row.reportingTime,
+        exitTime: isAbsent || row.exitTime === "" ? null : row.exitTime,
+        activeMinutes: isAbsent ? null : row.activeMinutes === "" ? null : row.activeMinutes,
+        merchantOrders: isAbsent ? {} : merchantOrders,
         payoutMod: row.payoutMod,
       };
       upsertEntry(entry);
@@ -263,6 +284,86 @@ export function DataEntryPage() {
             </button>
           )}
           {savedAt && <span className="text-xs text-[var(--status-good-text)]">Saved — Delivery Statistics and Comparison are up to date.</span>}
+        </div>
+      </Card>
+
+      <Card className="p-4 mt-4">
+        <div className="flex items-center justify-between mb-2">
+          <SectionLabel>Shift &amp; delivery time</SectionLabel>
+          <span className="text-xs text-[var(--text-muted)]">
+            Reporting / exit clock times plus total minutes spent on deliveries — this is what utilization and idle cost are computed from
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse min-w-[760px]">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--text-muted)]">
+                <th className="py-1.5 pr-3 font-semibold sticky left-0 bg-[var(--surface-1)]">Rider</th>
+                <th className="py-1.5 px-2 font-semibold text-center">Reporting</th>
+                <th className="py-1.5 px-2 font-semibold text-center">Exit</th>
+                <th className="py-1.5 px-2 font-semibold text-right">Active (min)</th>
+                <th className="py-1.5 px-2 font-semibold text-right">Shift</th>
+                <th className="py-1.5 px-2 font-semibold text-right">Idle</th>
+                <th className="py-1.5 pl-2 font-semibold text-right">Utilization</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const disabled = row.attendance === "A";
+                const shiftMinutes = minutesBetween(row.reportingTime || null, row.exitTime || null);
+                const activeMinutes = row.activeMinutes === "" ? null : row.activeMinutes;
+                const idleMinutes = shiftMinutes != null && activeMinutes != null ? Math.max(0, shiftMinutes - activeMinutes) : null;
+                const utilizationPct = shiftMinutes != null && activeMinutes != null && shiftMinutes > 0 ? Math.round((activeMinutes / shiftMinutes) * 100) : null;
+                return (
+                  <tr key={row.riderId} className="border-t border-[var(--gridline)]">
+                    <td className="py-1.5 pr-3 font-medium whitespace-nowrap sticky left-0 bg-[var(--surface-1)]">{row.riderName}</td>
+                    <td className="py-1.5 px-2 text-center">
+                      <input
+                        type="time"
+                        disabled={disabled}
+                        value={row.reportingTime}
+                        onChange={(e) => updateRow(row.riderId, { reportingTime: e.target.value })}
+                        className="border border-[var(--border)] rounded px-1.5 py-0.5 tabular-nums disabled:bg-black/5 disabled:text-[var(--text-muted)]"
+                      />
+                    </td>
+                    <td className="py-1.5 px-2 text-center">
+                      <input
+                        type="time"
+                        disabled={disabled}
+                        value={row.exitTime}
+                        onChange={(e) => updateRow(row.riderId, { exitTime: e.target.value })}
+                        className="border border-[var(--border)] rounded px-1.5 py-0.5 tabular-nums disabled:bg-black/5 disabled:text-[var(--text-muted)]"
+                      />
+                    </td>
+                    <td className="py-1.5 px-2 text-right">
+                      <input
+                        type="number"
+                        min={0}
+                        step={5}
+                        disabled={disabled}
+                        placeholder="n/a"
+                        value={row.activeMinutes}
+                        onChange={(e) => updateRow(row.riderId, { activeMinutes: e.target.value === "" ? "" : Number(e.target.value) })}
+                        className="w-16 text-right border border-[var(--border)] rounded px-1.5 py-0.5 tabular-nums disabled:bg-black/5 disabled:text-[var(--text-muted)]"
+                      />
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums text-[var(--text-secondary)]">
+                      {shiftMinutes != null ? formatHm(shiftMinutes) : "—"}
+                    </td>
+                    <td className="py-1.5 px-2 text-right tabular-nums text-[var(--text-secondary)]">
+                      {idleMinutes != null ? formatHm(idleMinutes) : "—"}
+                    </td>
+                    <td
+                      className="py-1.5 pl-2 text-right tabular-nums font-medium"
+                      style={{ color: utilizationPct != null && utilizationPct < 50 ? "var(--status-serious)" : undefined }}
+                    >
+                      {utilizationPct != null ? `${utilizationPct}%` : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </Card>
     </div>
