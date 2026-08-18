@@ -45,6 +45,31 @@ export function DataEntryPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
+  // Keep in-progress edits when a rider or merchant is added elsewhere while this page is open,
+  // instead of only picking up new roster entries on the next date change.
+  useEffect(() => {
+    setRows((prev) => {
+      let changed = false;
+      const existingIds = new Set(prev.map((r) => r.riderId));
+      const merged = prev.map((row) => {
+        const missingMerchants = db.merchants.filter((m) => !(m.id in row.merchantOrders));
+        if (missingMerchants.length === 0) return row;
+        changed = true;
+        const merchantOrders = { ...row.merchantOrders };
+        for (const m of missingMerchants) merchantOrders[m.id] = "";
+        return { ...row, merchantOrders };
+      });
+      for (const r of db.riders) {
+        if (existingIds.has(r.id)) continue;
+        changed = true;
+        const merchantOrders: Record<string, number | ""> = {};
+        for (const m of db.merchants) merchantOrders[m.id] = "";
+        merged.push({ riderId: r.id, riderName: r.name, attendance: "P", merchantOrders, km: "", otHours: "", payoutMod: false });
+      }
+      return changed ? merged : prev;
+    });
+  }, [db.riders, db.merchants]);
+
   const totals = useMemo(() => {
     let orders = 0;
     let km = 0;

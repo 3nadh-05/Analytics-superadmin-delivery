@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { DailyEntry, DayMeta, DeliveryStatsDB } from "./types";
+import type { DailyEntry, DayMeta, DeliveryStatsDB, Merchant, Rider } from "./types";
 import { generateSeedData } from "./seed";
 import { toISODate } from "./dates";
 
@@ -87,4 +87,55 @@ export function resetToSeed() {
 export function updateRates(rates: DeliveryStatsDB["rates"]) {
   db = { ...db, rates };
   notify();
+}
+
+function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function uniqueId(name: string, existingIds: string[]): string {
+  const base = slugify(name) || "entry";
+  let id = base;
+  let n = 2;
+  while (existingIds.includes(id)) {
+    id = `${base}-${n}`;
+    n++;
+  }
+  return id;
+}
+
+export function addRider(name: string): Rider {
+  const trimmed = name.trim();
+  const rider: Rider = { id: uniqueId(trimmed, db.riders.map((r) => r.id)), name: trimmed };
+  db = { ...db, riders: [...db.riders, rider] };
+  notify();
+  return rider;
+}
+
+export function addMerchant(name: string): Merchant {
+  const trimmed = name.trim();
+  const merchant: Merchant = { id: uniqueId(trimmed, db.merchants.map((m) => m.id)), name: trimmed };
+  db = { ...db, merchants: [...db.merchants, merchant] };
+  notify();
+  return merchant;
+}
+
+/** Removes a rider only if no daily entries reference them yet (safe undo for a mistaken add). */
+export function removeRider(riderId: string): boolean {
+  if (db.entries.some((e) => e.riderId === riderId)) return false;
+  db = { ...db, riders: db.riders.filter((r) => r.id !== riderId) };
+  notify();
+  return true;
+}
+
+/** Removes a merchant only if no daily entries reference them yet (safe undo for a mistaken add). */
+export function removeMerchant(merchantId: string): boolean {
+  if (db.entries.some((e) => (e.merchantOrders[merchantId] ?? 0) > 0)) return false;
+  db = { ...db, merchants: db.merchants.filter((m) => m.id !== merchantId) };
+  notify();
+  return true;
 }
